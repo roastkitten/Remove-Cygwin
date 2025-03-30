@@ -12,23 +12,6 @@ A PowerShell script designed to thoroughly and carefully remove a Cygwin install
 *   **RUN AS ADMINISTRATOR:** The script requires elevated privileges to modify system components. It includes a check and will exit if not run as Administrator.
 *   **USE AT YOUR OWN RISK:** Review the script code and understand its actions *before* execution. While designed with safety checks (prompts, path-dependent actions), the responsibility for its use lies with you.
 
-## Features
-
-*   **Administrator Check:** Ensures the script is run with necessary privileges.
-*   **Path Detection:** Attempts to automatically find the Cygwin installation directory via registry and common paths. Allows manual path specification.
-*   **Service Removal:** Stops and **deletes** Windows services associated with the detected Cygwin installation (requires path detection).
-*   **Registry Cleanup:** Removes standard Cygwin keys from `HKEY_LOCAL_MACHINE` and `HKEY_CURRENT_USER`.
-*   **PATH Modification:** Removes Cygwin directories from System and User `PATH` environment variables (requires path detection).
-*   **Cache Folder Removal:** Detects and removes potential Cygwin setup download cache folders.
-*   **Shortcut Removal:** Detects and removes the Cygwin folder from common Start Menu locations and Cygwin-named `.lnk` files from common Desktop locations.
-*   **Installation Directory Removal:** Deletes the main Cygwin installation folder (requires path detection).
-*   **Interactive Mode:** Prompts the user for confirmation before each major destructive action (default behavior).
-*   **Silent Mode:** Allows automated execution using command-line switches.
-    *   `-Silent`: Enables silent operation.
-    *   Granular Control Switches (e.g., `-RemoveRegistryKeys`, `-RemoveShortcuts`).
-    *   Bundled Control Switches (`-RemoveInstallDir` implies service/path removal, `-RemoveAllSafe` enables most actions).
-*   **Safer Logic:** Service removal, PATH modification, and installation directory removal now strictly require successful path detection, preventing accidental removal based on name patterns alone.
-
 ## Prerequisites
 
 *   Windows Operating System
@@ -49,9 +32,6 @@ A PowerShell script designed to thoroughly and carefully remove a Cygwin install
     ```
 5.  **Execution Policy:** If you encounter an error about script execution being disabled, you may need to adjust the execution policy for this session:
     ```powershell
-    # Check current policy (optional)
-    Get-ExecutionPolicy -List
-
     # Temporarily allow script execution for this PowerShell process
     Set-ExecutionPolicy Bypass -Scope Process -Force
     ```
@@ -98,6 +78,23 @@ A PowerShell script designed to thoroughly and carefully remove a Cygwin install
 *   `-ModifyPath`: *(Silent Mode)* Removes Cygwin entries from System/User PATH. Requires path detection. Implied by `-RemoveInstallDir` in silent mode.
 *   `-RemoveShortcuts`: *(Silent Mode)* Removes the 'Cygwin' folder from common User/All Users Start Menu program locations AND Cygwin-named shortcuts (`*.lnk`) from common Desktop locations. Implied by `-RemoveAllSafe`.
 *   `-RemoveAllSafe`: *(Silent Mode)* Convenience switch to enable `-RemoveInstallDir`, `-RemoveRegistryKeys`, `-RemoveServices`, `-RemoveCacheFolders`, `-ModifyPath`, and `-RemoveShortcuts` (actions requiring path detection will only execute if the path is found).
+
+## Features
+
+*   **Administrator Check:** Ensures the script is run with necessary privileges.
+*   **Path Detection:** Attempts to automatically find the Cygwin installation directory via registry and common paths. Allows manual path specification.
+*   **Service Removal:** Stops and **deletes** Windows services associated with the detected Cygwin installation (requires path detection).
+*   **Registry Cleanup:** Removes standard Cygwin keys from `HKEY_LOCAL_MACHINE` and `HKEY_CURRENT_USER`.
+*   **PATH Modification:** Removes Cygwin directories from System and User `PATH` environment variables (requires path detection).
+*   **Cache Folder Removal:** Detects and removes potential Cygwin setup download cache folders.
+*   **Shortcut Removal:** Detects and removes the Cygwin folder from common Start Menu locations and Cygwin-named `.lnk` files from common Desktop locations.
+*   **Installation Directory Removal:** Deletes the main Cygwin installation folder (requires path detection).
+*   **Interactive Mode:** Prompts the user for confirmation before each major destructive action (default behavior).
+*   **Silent Mode:** Allows automated execution using command-line switches.
+    *   `-Silent`: Enables silent operation.
+    *   Granular Control Switches (e.g., `-RemoveRegistryKeys`, `-RemoveShortcuts`).
+    *   Bundled Control Switches (`-RemoveInstallDir` implies service/path removal, `-RemoveAllSafe` enables most actions).
+*   **Safer Logic:** Service removal, PATH modification, and installation directory removal now strictly require successful path detection, preventing accidental removal based on name patterns alone.
 
 ## Safety Considerations
 
