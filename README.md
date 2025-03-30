@@ -50,7 +50,11 @@ A PowerShell script designed to thoroughly and carefully remove a Cygwin install
 
     *   **Silent Mode (Use with Extreme Caution!):** Requires the `-Silent` switch plus one or more action switches.
 
-        *   *Example: Remove only registry keys and shortcuts silently:*
+         *   *Example: Remove all components (actions requiring path only run if path found):*
+            ```powershell
+            .\Remove-Cygwin.ps1 -Silent -RemoveAllSafe
+            ```
+         *   *Example: Remove only registry keys and shortcuts silently:*
             ```powershell
             .\Remove-Cygwin.ps1 -Silent -RemoveRegistryKeys -RemoveShortcuts
             ```
@@ -58,10 +62,6 @@ A PowerShell script designed to thoroughly and carefully remove a Cygwin install
             ```powershell
             # Requires path detection or explicit -CygwinPath
             .\Remove-Cygwin.ps1 -Silent -RemoveInstallDir -CygwinPath "C:\cygwin64"
-            ```
-        *   *Example: Remove most components safely (actions requiring path only run if path found):*
-            ```powershell
-            .\Remove-Cygwin.ps1 -Silent -RemoveAllSafe
             ```
 
 7.  **Follow Prompts:** If running interactively, carefully read and respond (`y`/`n`) to the confirmation prompts.
@@ -71,13 +71,13 @@ A PowerShell script designed to thoroughly and carefully remove a Cygwin install
 
 *   `-CygwinPath <String>`: Optional. Specify the full path to the Cygwin root installation directory (e.g., `"C:\cygwin64"`). Required for actions like `-RemoveInstallDir`, `-RemoveServices`, `-ModifyPath`.
 *   `-Silent`: REQUIRED to enable silent mode. Suppresses all interactive confirmation prompts. Must be used with one or more action switches below.
+*   `-RemoveAllSafe`: *(Silent Mode)* Convenience switch to enable `-RemoveInstallDir`, `-RemoveRegistryKeys`, `-RemoveServices`, `-RemoveCacheFolders`, `-ModifyPath`, and `-RemoveShortcuts` (actions requiring path detection will only execute if the path is found).
 *   `-RemoveInstallDir`: *(Silent Mode)* Deletes the main Cygwin directory. Requires path detection. Implies `-RemoveServices` and `-ModifyPath` in silent mode.
 *   `-RemoveRegistryKeys`: *(Silent Mode)* Deletes standard Cygwin `Software\Cygwin` keys from HKLM and HKCU.
 *   `-RemoveServices`: *(Silent Mode)* Stops and deletes Cygwin services. Requires path detection. Implied by `-RemoveInstallDir` in silent mode.
 *   `-RemoveCacheFolders`: *(Silent Mode)* Deletes detected Cygwin download cache folders.
 *   `-ModifyPath`: *(Silent Mode)* Removes Cygwin entries from System/User PATH. Requires path detection. Implied by `-RemoveInstallDir` in silent mode.
 *   `-RemoveShortcuts`: *(Silent Mode)* Removes the 'Cygwin' folder from common User/All Users Start Menu program locations AND Cygwin-named shortcuts (`*.lnk`) from common Desktop locations. Implied by `-RemoveAllSafe`.
-*   `-RemoveAllSafe`: *(Silent Mode)* Convenience switch to enable `-RemoveInstallDir`, `-RemoveRegistryKeys`, `-RemoveServices`, `-RemoveCacheFolders`, `-ModifyPath`, and `-RemoveShortcuts` (actions requiring path detection will only execute if the path is found).
 
 ## Features
 
