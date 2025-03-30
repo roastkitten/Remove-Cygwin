@@ -7,8 +7,8 @@ A PowerShell script designed to thoroughly and carefully remove a Cygwin install
 ## 🚨🚨 EXTREME WARNING 🚨🚨
 
 *   **HIGHLY DESTRUCTIVE:** This script PERMANENTLY deletes files, folders, Windows services, registry keys, and shortcuts associated with Cygwin. It can also modify critical system settings like **LSA Authentication Packages**.
-*   **LSA MODIFICATION & REBOOT:** If the `cyglsa` package is detected and removed from LSA, a **SYSTEM REBOOT IS MANDATORY** to ensure stability and prevent login issues.
-*   **LSA DEPENDENCY:** If `cyglsa` is detected, it **MUST** be successfully removed (requiring confirmation or specific silent flags) before the main Cygwin installation directory can be deleted by this script. Refusing or failing the LSA reset will block directory removal. This should only occur If you installed cyglsa.dll by running the shell script /usr/bin/cyglsa-config as described in https://cygwin.com/cygwin-ug-net/ntsec.html
+*   **LSA MODIFICATION & REBOOT:** If the `cyglsa` package is detected and removed from LSA, a **SYSTEM REBOOT IS MANDATORY** to ensure stability and prevent login issues. This should only occur If you installed cyglsa.dll by running the shell script /usr/bin/cyglsa-config as described in https://cygwin.com/cygwin-ug-net/ntsec.html
+*   **LSA DEPENDENCY:** If `cyglsa` is detected, it **MUST** be successfully removed (requiring confirmation or specific silent flags) before the main Cygwin installation directory can be deleted by this script. Refusing or failing the LSA reset will block directory removal.
 *   **NO UNDO:** There is no built-in way to reverse the actions performed by this script.
 *   **BACKUP YOUR DATA:** Before running this script, ensure any important data stored *within* your Cygwin environment (e.g., in `/home/your_user`) or any data you cannot afford to lose is backed up securely elsewhere.
 *   **RUN AS ADMINISTRATOR:** The script requires elevated privileges to modify system components. It includes a check and will exit if not run as Administrator.
