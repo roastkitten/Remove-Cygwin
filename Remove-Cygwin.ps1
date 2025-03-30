@@ -1,79 +1,135 @@
 <#
 .SYNOPSIS
-    Stops and removes Cygwin components including Start Menu and Desktop shortcuts, with interactive prompts OR controlled silent operation.
+    Stops and removes Cygwin components including LSA package reset, shortcuts, with interactive prompts OR controlled silent operation. Enforces LSA reset before directory removal if needed.
 .DESCRIPTION
     Attempts a thorough removal of Cygwin. Runs interactively by default.
-    Use -Silent along with action switches for automated removal. Service/Path/Install Dir removal requires path detection.
-    -RemoveInstallDir implies -RemoveServices and -ModifyPath in silent mode (if path found).
-    -RemoveAllSafe enables most removal actions safely in silent mode.
+    Use -Silent along with action switches for automated removal. Handles LSA package 'cyglsa'.
+
+    Key Features:
+    - Detects Cygwin path (Registry, Common Locations).
+    - Stops and removes associated services.
+    - Removes standard Cygwin registry keys.
+    - Handles 'cyglsa' LSA Authentication Package removal (REQUIRES REBOOT).
+    - Removes Cygwin entries from System and User PATH variables.
+    - Removes Cygwin download cache folders.
+    - Removes Start Menu and Desktop shortcuts.
+    - Deletes the main installation directory.
+
+    Dependencies:
+    - Removing the installation directory requires path detection.
+    - Removing services requires path detection.
+    - Modifying PATH requires path detection.
+    - **CRITICAL:** If 'cyglsa' is found registered in LSA, it *must* be reset (requires user confirmation or specific silent flags) before the main installation directory can be deleted to prevent potential system instability.
+
+    Silent Mode:
+    - Requires the -Silent switch.
+    - Use action switches (-RemoveInstallDir, -RemoveRegistryKeys, etc.) to specify what to remove.
+    - -RemoveAllSafe enables most removal actions (requires path detection for some).
+    - -RemoveInstallDir implicitly enables -RemoveServices and -ModifyPath in silent mode (if the path is found).
+
 .PARAMETER CygwinPath
-    Optional. Specify the exact root path to the Cygwin installation (e.g., "C:\cygwin64"). Required for service/path/install dir removal.
+    Optional. Specify the exact root path to the Cygwin installation (e.g., "C:\cygwin64"). If provided and valid, overrides automatic detection. Required for service/path/install dir removal if auto-detection fails.
 .PARAMETER Silent
-    REQUIRED to enable any silent operation. Suppresses interactive prompts.
+    REQUIRED to enable any silent operation. Suppresses all interactive prompts. Action switches must also be used.
 .PARAMETER RemoveInstallDir
-    If -Silent is specified, deletes the main Cygwin installation directory (requires path detection). IMPLICITLY enables -RemoveServices and -ModifyPath in silent mode.
+    If -Silent is specified, deletes the main Cygwin installation directory (requires path detection). IMPLICITLY enables -RemoveServices and -ModifyPath in silent mode. Requires LSA reset if cyglsa is registered.
 .PARAMETER RemoveRegistryKeys
-    If -Silent is specified, deletes standard Cygwin registry keys.
+    If -Silent is specified, deletes standard Cygwin registry keys (HKLM/HKCU:\Software\Cygwin).
 .PARAMETER RemoveServices
-    If -Silent is specified, stops and deletes Cygwin services (requires path detection). Also implicitly enabled by -RemoveInstallDir in silent mode.
+    If -Silent is specified, stops and deletes Cygwin services linked to the detected path. Also implicitly enabled by -RemoveInstallDir in silent mode.
 .PARAMETER RemoveCacheFolders
-    If -Silent is specified, deletes detected Cygwin download cache folders.
+    If -Silent is specified, deletes detected Cygwin download cache folders (searches common locations).
 .PARAMETER ModifyPath
-    If -Silent is specified, removes Cygwin entries from System and User PATH variables (requires path detection). Also implicitly enabled by -RemoveInstallDir in silent mode.
+    If -Silent is specified, removes Cygwin entries from System and User PATH environment variables (requires path detection). Also implicitly enabled by -RemoveInstallDir in silent mode.
 .PARAMETER RemoveShortcuts
     If -Silent is specified, removes the 'Cygwin' folder from common Start Menu locations AND Cygwin-named shortcuts from common Desktop locations. Implied by -RemoveAllSafe.
+.PARAMETER ResetLsaPackages
+    If -Silent is specified, removes 'cyglsa' from LSA Authentication Packages if present. Implied by -RemoveAllSafe. **RESULTS IN MANDATORY REBOOT.** Crucial if cyglsa was used.
 .PARAMETER RemoveAllSafe
-    If -Silent is specified, enables -RemoveInstallDir, -RemoveRegistryKeys, -RemoveServices, -RemoveCacheFolders, -ModifyPath, and -RemoveShortcuts (actions requiring path detection will only run if path is found).
+    If -Silent is specified, enables -RemoveInstallDir, -RemoveRegistryKeys, -RemoveServices, -RemoveCacheFolders, -ModifyPath, -RemoveShortcuts, and -ResetLsaPackages. Actions requiring path detection will only run if the path is found.
+
 .EXAMPLE
-    # Run interactively, prompting for confirmation
-    .\Remove-Cygwin.ps1
+    # Run interactively, prompting for confirmation for each step
+    # Includes LSA check & enforces dependency for directory removal.
+    .\Remove-Cygwin.ps1 -Verbose
 
-    # Run silently, removing ONLY registry keys and shortcuts (Start Menu + Desktop)
-    .\Remove-Cygwin.ps1 -Silent -RemoveRegistryKeys -RemoveShortcuts
-
-    # Run silently using the safe 'all' switch (DANGEROUS, requires path detection for some actions)
+.EXAMPLE
+    # Run silently, removing everything possible, using auto-detected path
+    # DANGEROUS: No prompts. REQUIRES REBOOT if LSA was modified.
     .\Remove-Cygwin.ps1 -Silent -RemoveAllSafe
 
+.EXAMPLE
+    # Run silently, only remove registry keys and shortcuts
+    .\Remove-Cygwin.ps1 -Silent -RemoveRegistryKeys -RemoveShortcuts
+
+.EXAMPLE
+    # Run interactively, specifying the Cygwin path explicitly
+    .\Remove-Cygwin.ps1 -CygwinPath "C:\Cygwin" -Verbose
+
 .WARNING
-    This script is highly destructive. Silent mode removes prompts. Review switches carefully. BACK UP YOUR DATA. Run AS ADMINISTRATOR. Use at your own risk.
+    This script performs DESTRUCTIVE actions: deleting files, folders, services, registry keys, and modifying system settings (PATH, LSA).
+    Silent mode removes all confirmation prompts. Review switches carefully.
+    **BACK UP YOUR DATA before running.**
+    **Run AS ADMINISTRATOR.**
+    **USE AT YOUR OWN RISK.**
+    **LSA modification REQUIRES A REBOOT.** Refusing LSA reset (when needed) will prevent main directory deletion.
+
 .NOTES
-    Author: Assistant (AI)
-    Version: 1.8 - Added Desktop shortcut removal to -RemoveShortcuts, code formatting.
+    Author: Assistant (AI) / Refined by User Request
+    Version: 1.9 - Improved Readability, Error Handling, Standard Practices.
 #>
+[CmdletBinding(SupportsShouldProcess = $true)]
 param (
+    [Parameter(Mandatory = $false)]
     [string]$CygwinPath = "",
+
+    [Parameter(Mandatory = $false)]
     [switch]$Silent,
+
+    [Parameter(Mandatory = $false)]
     [switch]$RemoveInstallDir,
+
+    [Parameter(Mandatory = $false)]
     [switch]$RemoveRegistryKeys,
+
+    [Parameter(Mandatory = $false)]
     [switch]$RemoveServices,
+
+    [Parameter(Mandatory = $false)]
     [switch]$RemoveCacheFolders,
+
+    [Parameter(Mandatory = $false)]
     [switch]$ModifyPath,
+
+    [Parameter(Mandatory = $false)]
     [switch]$RemoveShortcuts,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$ResetLsaPackages,
+
+    [Parameter(Mandatory = $false)]
     [switch]$RemoveAllSafe
 )
 
 # --- Start Configuration ---
-$CommonCygwinPaths = @(
-    "C:\cygwin64",
-    "C:\cygwin"
-)
-$CacheSearchLocations = @(
-    "$env:USERPROFILE\Downloads",
-    "$env:USERPROFILE\Desktop",
-    "$env:USERPROFILE"
-)
+$CommonCygwinPaths = @("C:\cygwin64", "C:\cygwin")
+$CacheSearchLocations = @("$env:USERPROFILE\Downloads", "$env:USERPROFILE\Desktop", "$env:USERPROFILE")
 $StartMenuPaths = @(
-    "$env:ProgramData\Microsoft\Windows\Start Menu\Programs", # All Users
-    "$env:APPDATA\Microsoft\Windows\Start Menu\Programs"      # Current User
+    Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"
+    Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
 )
 $DesktopPaths = @(
-    "$env:PUBLIC\Desktop",                                    # All Users
-    "$env:USERPROFILE\Desktop"                                # Current User
+    Join-Path $env:PUBLIC "Desktop"
+    Join-Path $env:USERPROFILE "Desktop"
 )
-$CygwinShortcutFolderName = "Cygwin" # Standard folder name in Start Menu
+$CygwinShortcutFolderName = "Cygwin" # Name of the folder in Start Menu
+$LsaRegKeyPath = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa"
+$LsaValueName = "Authentication Packages"
+$CygLsaPackageName = "cyglsa"
+$CoreLsaPackage = "msv1_0" # Essential LSA package, don't remove!
 # --- End Configuration ---
 
-# Function to check for Admin privileges
+# --- Helper Function ---
 function Test-IsAdmin {
     try {
         $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -81,117 +137,145 @@ function Test-IsAdmin {
         return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
     }
     catch {
-        Write-Warning "Could not determine administrator status."
+        Write-Warning "Could not determine admin status. Assuming not admin."
         return $false
     }
 }
 
 # --- Initialization ---
 $ScriptStartTime = Get-Date
+$lsaModified = $false           # Tracks if LSA registry key was successfully changed
+$cygLsaFoundInRegistry = $false # Tracks if 'cyglsa' was found in the LSA packages list initially
+$lsaResetAttempted = $false      # Tracks if user confirmed or silent mode triggered LSA reset attempt
+$DetectedCygwinPath = $null
+$PathFound = $false
 
 # Determine effective actions in silent mode
-$EffectiveRemoveInstallDir = $Silent -and ($RemoveInstallDir.IsPresent -or $RemoveAllSafe.IsPresent)
-$EffectiveRemoveRegistryKeys = $Silent -and ($RemoveRegistryKeys.IsPresent -or $RemoveAllSafe.IsPresent)
-$EffectiveRemoveServices = $Silent -and ($RemoveServices.IsPresent -or $RemoveInstallDir.IsPresent -or $RemoveAllSafe.IsPresent)
-$EffectiveRemoveCacheFolders = $Silent -and ($RemoveCacheFolders.IsPresent -or $RemoveAllSafe.IsPresent)
-$EffectiveModifyPath = $Silent -and ($ModifyPath.IsPresent -or $RemoveInstallDir.IsPresent -or $RemoveAllSafe.IsPresent)
-$EffectiveRemoveShortcuts = $Silent -and ($RemoveShortcuts.IsPresent -or $RemoveAllSafe.IsPresent)
+# Note: Some actions depend on $PathFound being true later.
+$EffectiveRemoveInstallDir = $Silent.IsPresent -and ($RemoveInstallDir.IsPresent -or $RemoveAllSafe.IsPresent)
+$EffectiveRemoveRegistryKeys = $Silent.IsPresent -and ($RemoveRegistryKeys.IsPresent -or $RemoveAllSafe.IsPresent)
+# RemoveInstallDir implies RemoveServices and ModifyPath in silent mode
+$EffectiveRemoveServices = $Silent.IsPresent -and ($RemoveServices.IsPresent -or $EffectiveRemoveInstallDir -or $RemoveAllSafe.IsPresent)
+$EffectiveRemoveCacheFolders = $Silent.IsPresent -and ($RemoveCacheFolders.IsPresent -or $RemoveAllSafe.IsPresent)
+$EffectiveModifyPath = $Silent.IsPresent -and ($ModifyPath.IsPresent -or $EffectiveRemoveInstallDir -or $RemoveAllSafe.IsPresent)
+$EffectiveRemoveShortcuts = $Silent.IsPresent -and ($RemoveShortcuts.IsPresent -or $RemoveAllSafe.IsPresent)
+$EffectiveResetLsaPackages = $Silent.IsPresent -and ($ResetLsaPackages.IsPresent -or $RemoveAllSafe.IsPresent)
+
+# --- Pre-Checks and Warnings ---
 
 # 1. Check for Admin privileges
 if (-not (Test-IsAdmin)) {
-    Write-Error "This script must be run with Administrator privileges. Please re-run as Administrator."
+    Write-Error "This script requires Administrator privileges to modify services, registry (HKLM), LSA, and system files. Please run as Administrator."
     Exit 1
 }
 
 # 2. Initial Warning and Confirmation (if not silent)
-Write-Host "*** EXTREME WARNING ***" -ForegroundColor Red
-Write-Host "This script will attempt to COMPLETELY REMOVE Cygwin and related components." -ForegroundColor Yellow
-if ($Silent) {
-    Write-Host "RUNNING IN SILENT MODE." -ForegroundColor Magenta
-    Write-Host "Effective actions intended by switches (some require path detection):"
-    if ($EffectiveRemoveInstallDir) { Write-Host " - RemoveInstallDir (Implies Service/Path removal if path found)" -ForegroundColor Cyan }
-    if ($EffectiveRemoveRegistryKeys) { Write-Host " - RemoveRegistryKeys" -ForegroundColor Cyan }
-    if ($EffectiveRemoveServices) { Write-Host " - RemoveServices (Requires path detection)" -ForegroundColor Cyan }
-    if ($EffectiveRemoveCacheFolders) { Write-Host " - RemoveCacheFolders" -ForegroundColor Cyan }
-    if ($EffectiveModifyPath) { Write-Host " - ModifyPath (Requires path detection)" -ForegroundColor Cyan }
-    if ($EffectiveRemoveShortcuts) { Write-Host " - RemoveShortcuts (Start Menu + Desktop)" -ForegroundColor Cyan }
-    if (-not ($EffectiveRemoveInstallDir -or $EffectiveRemoveRegistryKeys -or $EffectiveRemoveServices -or $EffectiveRemoveCacheFolders -or $EffectiveModifyPath -or $EffectiveRemoveShortcuts)) {
-        Write-Warning "Silent mode specified, but no effective actions enabled by switches. No destructive actions will be taken."
-    }
-} else {
-    Write-Host "Running interactively. It will prompt before each major destructive action." -ForegroundColor Yellow
-}
-Write-Host "This includes DELETING services, registry keys, shortcuts, and files/folders. THERE IS NO UNDO." -ForegroundColor Yellow
-Write-Host "Ensure important data is backed up elsewhere." -ForegroundColor Yellow
+Write-Host "`n*** EXTREME WARNING ***" -ForegroundColor Red
+Write-Host "This script attempts to COMPLETELY REMOVE Cygwin and related components." -ForegroundColor Yellow
+Write-Host "This includes potentially deleting services, registry keys, shortcuts, LSA settings, and the main installation folder." -ForegroundColor Yellow
+Write-Host "Ensure all important data within the Cygwin installation is backed up." -ForegroundColor Yellow
+Write-Host "** MODIFICATION OF LSA PACKAGES REQUIRES A REBOOT! **" -ForegroundColor Red
+Write-Host "** If 'cyglsa' is registered, refusing LSA reset will PREVENT main directory deletion. **" -ForegroundColor Yellow
+Write-Host "There is NO UNDO feature." -ForegroundColor Yellow
 Write-Host ""
 
-if (-not $Silent) {
-    $initialConfirmation = Read-Host "Are you sure you want to begin the Cygwin removal process interactively? (y/n)"
+if ($Silent.IsPresent) {
+    Write-Host "RUNNING IN SILENT MODE. NO FURTHER PROMPTS WILL BE SHOWN." -ForegroundColor Magenta
+    Write-Host "Effective actions intended by switches (some require path detection or successful LSA reset):"
+    if ($EffectiveRemoveInstallDir)   { Write-Host " - RemoveInstallDir (Implies Service/Path removal if path found, requires LSA reset if applicable)" -ForegroundColor Cyan }
+    if ($EffectiveRemoveRegistryKeys) { Write-Host " - RemoveRegistryKeys" -ForegroundColor Cyan }
+    if ($EffectiveRemoveServices)     { Write-Host " - RemoveServices (Requires path detection)" -ForegroundColor Cyan }
+    if ($EffectiveModifyPath)         { Write-Host " - ModifyPath (Requires path detection)" -ForegroundColor Cyan }
+    if ($EffectiveResetLsaPackages)   { Write-Host " - ResetLsaPackages (REQUIRES REBOOT if changed)" -ForegroundColor Yellow }
+    if ($EffectiveRemoveCacheFolders) { Write-Host " - RemoveCacheFolders" -ForegroundColor Cyan }
+    if ($EffectiveRemoveShortcuts)    { Write-Host " - RemoveShortcuts (Start Menu + Desktop)" -ForegroundColor Cyan }
+
+    if (-not ($EffectiveRemoveInstallDir -or $EffectiveRemoveRegistryKeys -or $EffectiveRemoveServices -or $EffectiveRemoveCacheFolders -or $EffectiveModifyPath -or $EffectiveRemoveShortcuts -or $EffectiveResetLsaPackages)) {
+        Write-Warning "Silent mode specified, but no action switches (-Remove*, -RemoveAllSafe) were provided. No actions will be taken."
+        # Exit here or let it continue (it will just detect path etc.)? Let it continue for now.
+    } else {
+         Write-Host "Pausing for 5 seconds before silent execution begins..." -ForegroundColor Gray
+         Start-Sleep -Seconds 5
+    }
+} else {
+    Write-Host "Running INTERACTIVELY. You will be prompted before each major destructive action." -ForegroundColor Yellow
+    $initialConfirmation = Read-Host "Do you understand the risks and wish to proceed with Cygwin removal? (y/n)"
     if ($initialConfirmation -ne 'y') {
         Write-Host "Operation cancelled by user." -ForegroundColor Green
         Exit 0
     }
-} else {
-    Write-Host "Pausing for 5 seconds before proceeding in silent mode..."
-    Start-Sleep -Seconds 5
 }
 
-# 3. Determine Cygwin Installation Path (Warn but continue if not found)
-Write-Host "`nStep 1: Attempting to detect Cygwin installation path..." -ForegroundColor Cyan
-$DetectedCygwinPath = $null
-$PathFound = $false
+# --- Main Removal Steps ---
 
+# 3. Determine Cygwin Installation Path
+Write-Host "`nStep 1: Detecting Cygwin installation path..." -ForegroundColor Cyan
+# Priority 1: User-provided path
 if (-not [string]::IsNullOrEmpty($CygwinPath)) {
-    if (Test-Path -Path $CygwinPath -PathType Container) {
-        $DetectedCygwinPath = $CygwinPath.TrimEnd('\')
-        Write-Host "Using provided Cygwin path: $DetectedCygwinPath" -ForegroundColor Cyan
-        $PathFound = $true
+    $NormalizedPath = $CygwinPath.TrimEnd('\')
+    if (Test-Path -Path $NormalizedPath -PathType Container) {
+        Write-Verbose "Checking user provided path: $NormalizedPath"
+        # Basic sanity check for a Cygwin directory
+        if (Test-Path (Join-Path $NormalizedPath "Cygwin.bat") -PathType Leaf -or Test-Path (Join-Path $NormalizedPath "bin") -PathType Container) {
+             $DetectedCygwinPath = $NormalizedPath
+             Write-Host "Using valid provided path: $DetectedCygwinPath" -ForegroundColor Green
+             $PathFound = $true
+        } else {
+             Write-Warning "Provided path '$NormalizedPath' exists, but doesn't look like a Cygwin root (missing Cygwin.bat or bin/). Continuing detection."
+        }
     } else {
-        Write-Warning "Provided path '$CygwinPath' does not exist or is not a directory. Attempting auto-detection."
+        Write-Warning "Provided path '$CygwinPath' not found or is not a directory. Continuing detection."
     }
 }
 
+# Priority 2: Registry
 if (-not $PathFound) {
-    $regKeyPaths = @(
-        "HKLM:\Software\Cygwin\setup",
-        "HKCU:\Software\Cygwin\setup"
-    )
+    Write-Verbose "Checking registry for Cygwin path..."
+    $regKeyPaths = @("HKLM:\Software\Cygwin\setup", "HKCU:\Software\Cygwin\setup")
     foreach ($keyPath in $regKeyPaths) {
         if (Test-Path $keyPath) {
-            $regValue = Get-ItemProperty -Path $keyPath -Name "rootdir" -ErrorAction SilentlyContinue
-            if ($regValue -and $regValue.rootdir -and (Test-Path $regValue.rootdir -PathType Container)) {
-                $DetectedCygwinPath = $regValue.rootdir.TrimEnd('\')
-                Write-Host "Found Cygwin path in Registry ($keyPath): $DetectedCygwinPath" -ForegroundColor Green
-                $PathFound = $true
-                break
+            Write-Verbose "Checking key: $keyPath"
+            try {
+                $regValue = Get-ItemProperty -Path $keyPath -Name "rootdir" -ErrorAction Stop
+                if ($regValue -and $regValue.rootdir -and (Test-Path $regValue.rootdir -PathType Container)) {
+                    $DetectedCygwinPath = $regValue.rootdir.TrimEnd('\')
+                    Write-Host "Found path in Registry ($keyPath): $DetectedCygwinPath" -ForegroundColor Green
+                    $PathFound = $true
+                    break # Found it, stop checking registry
+                }
+            } catch {
+                Write-Verbose "Could not read 'rootdir' from '$keyPath' or path invalid: $($_.Exception.Message)"
             }
         }
     }
 }
 
+# Priority 3: Common Locations
 if (-not $PathFound) {
-    Write-Host "Checking common locations..." -ForegroundColor Cyan
+    Write-Verbose "Checking common installation locations..."
     foreach ($path in $CommonCygwinPaths) {
+        Write-Verbose "Checking location: $path"
         if (Test-Path -Path $path -PathType Container) {
+            # Check for Cygwin.bat or bin directory as indicators
             if (Test-Path (Join-Path $path "Cygwin.bat") -PathType Leaf -or Test-Path (Join-Path $path "bin") -PathType Container) {
                 $DetectedCygwinPath = $path.TrimEnd('\')
-                Write-Host "Found potential Cygwin path: $DetectedCygwinPath" -ForegroundColor Green
+                Write-Host "Found potential path in common location: $DetectedCygwinPath" -ForegroundColor Green
                 $PathFound = $true
-                break
+                break # Found it, stop checking common paths
             }
         }
     }
 }
 
 if (-not $PathFound) {
-    Write-Warning "Could not determine the Cygwin installation path."
-    Write-Warning "Actions requiring the path (-ModifyPath, -RemoveInstallDir, -RemoveServices) will be skipped."
-    $DetectedCygwinPath = $null
+    Write-Warning "Could not determine Cygwin installation path automatically."
+    Write-Warning "Path-dependent actions (Services, PATH, Install Dir) will be skipped unless a path was provided manually but failed validation."
+    $DetectedCygwinPath = $null # Ensure it's null if not found
 } else {
     Write-Host "Confirmed Cygwin Root Path: $DetectedCygwinPath" -ForegroundColor Cyan
 }
+Write-Host "-----------------------------------------------------"
 
-# --- Removal Steps ---
 
 # 4. Stop and Remove Cygwin Services (REQUIRES PATH)
 Write-Host "`nStep 2: Processing Cygwin services..." -ForegroundColor Cyan
@@ -199,21 +283,26 @@ $proceedWithServiceRemoval = $false
 $cygwinServices = @()
 
 if ($PathFound) {
-    Write-Host "Searching for services linked to path: $DetectedCygwinPath"
-    $cygwinServices = Get-CimInstance Win32_Service | Where-Object { $_.PathName -like "$DetectedCygwinPath\*" } -ErrorAction SilentlyContinue
+    Write-Verbose "Searching for services linked to path: $DetectedCygwinPath"
+    try {
+        # Using -like is generally safer than assuming exact path structure in service registration
+        $cygwinServices = Get-CimInstance Win32_Service | Where-Object { $_.PathName -like "$DetectedCygwinPath\*" } -ErrorAction SilentlyContinue
+    } catch {
+        Write-Warning "Error querying services: $($_.Exception.Message)"
+    }
 
     if ($cygwinServices.Count -gt 0) {
         Write-Host "Found potential Cygwin services:" -ForegroundColor Yellow
-        $cygwinServices | ForEach-Object { Write-Host "  - $($_.Name) ($($_.DisplayName)) - Path: $($_.PathName)" }
+        $cygwinServices | ForEach-Object { Write-Host "  - $($_.Name) ($($_.DisplayName)) Path: $($_.PathName)" }
 
-        if ($Silent) {
+        if ($Silent.IsPresent) {
             if ($EffectiveRemoveServices) {
-                Write-Host "Silent mode: Proceeding with service removal." -ForegroundColor Cyan
+                Write-Host "Silent mode: Will attempt to stop and remove services." -ForegroundColor Cyan
                 $proceedWithServiceRemoval = $true
             } else {
-                Write-Host "Silent mode: Skipping service removal (action not enabled)." -ForegroundColor Gray
+                Write-Host "Silent mode: Skipping service removal (Action not enabled)." -ForegroundColor Gray
             }
-        } else { # Interactive mode
+        } else { # Interactive
             Write-Host ""
             $confirm = Read-Host "Do you want to STOP and DELETE these services? (y/n)"
             if ($confirm -eq 'y') {
@@ -221,52 +310,62 @@ if ($PathFound) {
             }
         }
     } else {
-        Write-Host "No services found linked to path '$DetectedCygwinPath'." -ForegroundColor Green
+        Write-Host "No running services found linked to the path '$DetectedCygwinPath'." -ForegroundColor Green
     }
 } else {
-    Write-Warning "Skipping service processing because Cygwin installation path was not found."
+    Write-Warning "Skipping service processing: Cygwin installation path not found."
 }
 
-# Execute service removal if confirmed/enabled
 if ($proceedWithServiceRemoval) {
     Write-Host "Proceeding with service stop and deletion..." -ForegroundColor Yellow
     foreach ($service in $cygwinServices) {
         $serviceName = $service.Name
-        Write-Host "  Processing service: $serviceName"
-
-        # Stop
+        Write-Host "  Processing: $serviceName"
+        # Stop the service
         Write-Host "    Stopping service..." -ForegroundColor Yellow
-        Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 2 # Give service time to stop
-        $status = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-        if ($status -and $status.Status -ne 'Stopped') {
-            Write-Warning "      Service '$serviceName' may not have stopped gracefully."
-        } else {
-            Write-Host "      Service '$serviceName' stopped." -ForegroundColor Green
-        }
-
-        # Remove/Delete
-        Write-Host "    Deleting service registration..." -ForegroundColor Yellow
-        $removed = $false
         try {
-            # Using sc.exe delete is often more reliable
-            $deleteResult = sc.exe delete "$serviceName" 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "      Service '$serviceName' deleted successfully via sc.exe." -ForegroundColor Green
-                $removed = $true
+            Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue # Try stopping gracefully first, but force if needed
+            Start-Sleep -Seconds 3 # Give time for service to stop
+            $status = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+            if ($status -and $status.Status -ne 'Stopped') {
+                Write-Warning "      Service '$serviceName' did not stop gracefully after Stop-Service."
+                # Optional: Could try taskkill here if needed, but sc delete usually works even if running
             } else {
-                Write-Warning "      sc.exe delete failed for '$serviceName'. Output: $deleteResult"
+                Write-Host "      Service stopped." -ForegroundColor Green
             }
         } catch {
-            Write-Warning "      An error occurred using sc.exe delete for '$serviceName': $($_.Exception.Message)"
+            Write-Warning "      Error trying to stop service '$serviceName': $($_.Exception.Message)"
         }
 
-        # Fallback using Remove-Service if sc.exe failed and cmdlet exists
+        # Delete the service
+        Write-Host "    Deleting service..." -ForegroundColor Yellow
+        $removed = $false
+        try {
+            # Use sc.exe as it's often more reliable for deleting stubborn services
+            Write-Verbose "      Attempting deletion with sc.exe delete ""$serviceName"""
+            $scOutput = sc.exe delete "$serviceName" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "      Deleted successfully via sc.exe." -ForegroundColor Green
+                $removed = $true
+            } else {
+                # Check if error is "service does not exist" (error code 1060) - maybe already removed
+                if ($scOutput -match '1060') {
+                     Write-Host "      Service already deleted or does not exist (sc.exe error 1060)." -ForegroundColor Green
+                     $removed = $true
+                } else {
+                    Write-Warning "      sc.exe delete failed for '$serviceName'. Output: $scOutput"
+                }
+            }
+        } catch {
+            Write-Warning "      Error executing sc.exe delete for '$serviceName': $($_.Exception.Message)"
+        }
+
+        # Fallback using PowerShell cmdlet if sc.exe failed and cmdlet exists
         if (-not $removed -and (Get-Command Remove-Service -ErrorAction SilentlyContinue)) {
-            Write-Host "      Attempting fallback deletion with Remove-Service for '$serviceName'..."
+            Write-Verbose "      Attempting deletion with Remove-Service..."
             try {
                 Remove-Service -Name $serviceName -Force -ErrorAction Stop
-                Write-Host "      Service '$serviceName' deleted successfully via Remove-Service." -ForegroundColor Green
+                Write-Host "      Deleted successfully via Remove-Service." -ForegroundColor Green
                 $removed = $true
             } catch {
                 Write-Warning "      Remove-Service failed for '$serviceName': $($_.Exception.Message)"
@@ -274,21 +373,21 @@ if ($proceedWithServiceRemoval) {
         }
 
         if (-not $removed) {
-            Write-Error "      FAILED to delete service '$serviceName' using available methods."
+            Write-Error "      FAILED to delete service '$serviceName'. Manual removal might be required after reboot."
         }
     }
 } elseif ($cygwinServices.Count -gt 0 -and (-not $proceedWithServiceRemoval)) {
-    # Log if services were found but removal was skipped
-    Write-Host "Skipping service removal." -ForegroundColor Green
+    Write-Host "Skipping service removal as requested or not enabled." -ForegroundColor Green
 }
+Write-Host "-----------------------------------------------------"
 
-# 5. Remove Registry Keys
-Write-Host "`nStep 3: Processing Cygwin registry keys..." -ForegroundColor Cyan
-$regKeysToRemove = @(
-    "HKLM:\Software\Cygwin",
-    "HKCU:\Software\Cygwin"
-)
+
+# 5. Remove Registry Keys (Software\Cygwin)
+Write-Host "`nStep 3: Processing main Cygwin registry keys..." -ForegroundColor Cyan
+$regKeysToRemove = @("HKLM:\Software\Cygwin", "HKCU:\Software\Cygwin")
 $foundRegKeys = @()
+$proceedWithRegistryRemoval = $false
+
 foreach ($keyPath in $regKeysToRemove) {
     if (Test-Path $keyPath) {
         $foundRegKeys += $keyPath
@@ -296,20 +395,19 @@ foreach ($keyPath in $regKeysToRemove) {
 }
 
 if ($foundRegKeys.Count -gt 0) {
-    Write-Host "Found potential Cygwin registry keys:" -ForegroundColor Yellow
+    Write-Host "Found standard Cygwin registry keys:" -ForegroundColor Yellow
     $foundRegKeys | ForEach-Object { Write-Host "  - $_" }
 
-    $proceedWithRegistryRemoval = $false
-    if ($Silent) {
+    if ($Silent.IsPresent) {
         if ($EffectiveRemoveRegistryKeys) {
-            Write-Host "Silent mode: Proceeding with registry key removal." -ForegroundColor Cyan
+            Write-Host "Silent mode: Will attempt to remove registry keys." -ForegroundColor Cyan
             $proceedWithRegistryRemoval = $true
         } else {
-            Write-Host "Silent mode: Skipping registry key removal (action not enabled)." -ForegroundColor Gray
+            Write-Host "Silent mode: Skipping registry key removal (Action not enabled)." -ForegroundColor Gray
         }
     } else { # Interactive
         Write-Host ""
-        $confirm = Read-Host "Do you want to DELETE these registry keys (and their subkeys)? (y/n)"
+        $confirm = Read-Host "Do you want to DELETE these registry keys and their subkeys? (y/n)"
         if ($confirm -eq 'y') {
             $proceedWithRegistryRemoval = $true
         }
@@ -318,153 +416,277 @@ if ($foundRegKeys.Count -gt 0) {
     if ($proceedWithRegistryRemoval) {
         Write-Host "Proceeding with registry key removal..." -ForegroundColor Yellow
         foreach ($keyPath in $foundRegKeys) {
-            Write-Host "  Removing registry key: $keyPath..." -ForegroundColor Yellow
+            Write-Host "  Removing: $keyPath..." -ForegroundColor Yellow
             try {
+                # Use -Recurse -Force for thorough removal
                 Remove-Item -Path $keyPath -Recurse -Force -ErrorAction Stop
-                Write-Host "    Registry key '$keyPath' removed." -ForegroundColor Green
+                Write-Host "    Removed '$keyPath'." -ForegroundColor Green
             } catch {
-                Write-Warning "    Could not remove registry key '$keyPath': $($_.Exception.Message)"
+                Write-Warning "    FAILED to remove registry key '$keyPath': $($_.Exception.Message)"
             }
         }
     } else {
-        Write-Host "Skipping registry key removal." -ForegroundColor Green
+        Write-Host "Skipping registry key removal as requested or not enabled." -ForegroundColor Green
     }
 } else {
-    Write-Host "No standard Cygwin registry keys found." -ForegroundColor Green
+    Write-Host "No standard Cygwin registry keys found at HKLM/HKCU:\Software\Cygwin." -ForegroundColor Green
+}
+Write-Host "-----------------------------------------------------"
+
+
+# 6. Reset LSA Authentication Packages
+Write-Host "`nStep 4: Processing LSA Authentication Packages..." -ForegroundColor Cyan
+$proceedWithLsaReset = $false
+$currentLsaPackages = $null
+
+# Check if 'cyglsa' exists in the LSA packages
+try {
+    $lsaProp = Get-ItemProperty -Path $LsaRegKeyPath -Name $LsaValueName -ErrorAction SilentlyContinue
+    if ($lsaProp -ne $null) {
+        # Ensure it's treated as an array, even if it's a single string currently
+        $currentLsaPackages = @($lsaProp.$LsaValueName)
+        if ($currentLsaPackages -contains $CygLsaPackageName) {
+            $cygLsaFoundInRegistry = $true # Set flag: It was present initially
+            Write-Host "Found '$CygLsaPackageName' in LSA Authentication Packages." -ForegroundColor Yellow
+            Write-Host "  Current Value: $($currentLsaPackages -join ', ')"
+        } else {
+            Write-Host "'$CygLsaPackageName' not found in LSA Authentication Packages." -ForegroundColor Green
+        }
+    } else {
+        Write-Host "LSA Authentication Packages value not found or registry key unreadable. Skipping LSA modification." -ForegroundColor Green
+    }
+} catch {
+    Write-Warning "Could not read LSA Packages key '$LsaRegKeyPath': $($_.Exception.Message). Skipping LSA modification."
 }
 
-# 6. Remove Cygwin from PATH environment variables (REQUIRES PATH)
-Write-Host "`nStep 4: Processing PATH environment variables..." -ForegroundColor Cyan
+# If found, decide whether to remove it
+if ($cygLsaFoundInRegistry) {
+    if ($Silent.IsPresent) {
+        if ($EffectiveResetLsaPackages) {
+            Write-Warning "Silent mode: Proceeding with LSA package reset. REBOOT WILL BE MANDATORY."
+            $proceedWithLsaReset = $true
+            $lsaResetAttempted = $true
+        } else {
+            Write-Warning "Silent mode: '$CygLsaPackageName' found but reset not enabled via -ResetLsaPackages or -RemoveAllSafe."
+            Write-Warning "Main Cygwin directory deletion will be BLOCKED due to potential system instability."
+            $proceedWithLsaReset = $false # Explicitly false
+        }
+    } else { # Interactive
+        Write-Warning "Modifying LSA Authentication Packages is a sensitive operation."
+        Write-Warning "Removing '$CygLsaPackageName' requires a system REBOOT afterwards."
+        Write-Warning "If you used Cygwin features requiring LSA (like SSHD with certain auth types), this is necessary."
+        Write-Warning "Refusing this step will PREVENT the main Cygwin directory from being deleted later."
+        Write-Host ""
+        $confirm = Read-Host "Remove '$CygLsaPackageName' from LSA Packages? (REBOOT REQUIRED) (y/n)"
+        if ($confirm -eq 'y') {
+            $proceedWithLsaReset = $true
+            $lsaResetAttempted = $true
+        } else {
+             $proceedWithLsaReset = $false
+        }
+    }
+
+    # Perform the removal if decided
+    if ($proceedWithLsaReset) {
+        # Filter out cyglsa
+        $newLsaPackages = $currentLsaPackages | Where-Object { $_ -ne $CygLsaPackageName }
+
+        # CRITICAL CHECK: Ensure the core package 'msv1_0' is still present
+        if ($newLsaPackages -contains $CoreLsaPackage) {
+            Write-Host "  New LSA Package list will be: $($newLsaPackages -join ', ')" -ForegroundColor Cyan
+            Write-Host "Attempting registry update..." -ForegroundColor Yellow
+            try {
+                # Set the modified list back
+                Set-ItemProperty -Path $LsaRegKeyPath -Name $LsaValueName -Value $newLsaPackages -Type MultiString -Force -ErrorAction Stop
+                Write-Host "  LSA Packages updated successfully in registry." -ForegroundColor Green
+                $lsaModified = $true # Flag that the change was made and reboot is needed
+            } catch {
+                Write-Error "  FAILED to update LSA Packages key '$LsaRegKeyPath': $($_.Exception.Message)"
+                Write-Error "  LSA settings may be in an inconsistent state. Manual check recommended."
+                $lsaModified = $false # Failed, don't set the flag
+            }
+        } else {
+            # This should almost never happen unless the system LSA is already broken
+            Write-Error "  CRITICAL ERROR: Core LSA package '$CoreLsaPackage' would be removed by this operation. Aborting LSA modification to prevent system lockout."
+            Write-Error "  Original LSA Packages: $($currentLsaPackages -join ', ')"
+            $proceedWithLsaReset = $false # Ensure this didn't proceed
+            $lsaModified = $false
+        }
+    } else {
+        Write-Host "Skipping LSA package reset." -ForegroundColor Green
+        if ($cygLsaFoundInRegistry) { # Only warn if it was found but skipped
+             Write-Warning "Reminder: '$CygLsaPackageName' remains in LSA. Main directory deletion will be blocked."
+        }
+    }
+}
+Write-Host "-----------------------------------------------------"
+
+
+# 7. Remove Cygwin from PATH environment variables (REQUIRES PATH)
+Write-Host "`nStep 5: Processing PATH environment variables..." -ForegroundColor Cyan
 $proceedWithPathModification = $false
 
 if ($PathFound) {
-    if ($Silent) {
+    if ($Silent.IsPresent) {
         if ($EffectiveModifyPath) {
-            Write-Host "Silent mode: Proceeding with PATH modification." -ForegroundColor Cyan
+            Write-Host "Silent mode: Will attempt PATH modification." -ForegroundColor Cyan
             $proceedWithPathModification = $true
         } else {
-            Write-Host "Silent mode: Skipping PATH modification (action not enabled)." -ForegroundColor Gray
+            Write-Host "Silent mode: Skipping PATH modification (Action not enabled)." -ForegroundColor Gray
         }
     } else { # Interactive
-        Write-Host "Found Cygwin path: $DetectedCygwinPath"
-        Write-Host "Entries matching this path or its '/bin' subdirectory will be removed from System and User PATH."
+        Write-Host "Detected Cygwin Path: $DetectedCygwinPath"
+        Write-Host "This step will remove entries related to this path (e.g., '$DetectedCygwinPath\bin') from System and User PATH variables."
         Write-Host ""
-        $confirm = Read-Host "Do you want to modify the System and User PATH variables? (y/n)"
+        $confirm = Read-Host "Do you want to modify System and User PATH variables? (y/n)"
         if ($confirm -eq 'y') {
             $proceedWithPathModification = $true
         }
     }
 
     if ($proceedWithPathModification) {
+        Write-Host "Proceeding with PATH modification..." -ForegroundColor Yellow
         $cygwinBinPath = Join-Path $DetectedCygwinPath "bin"
+        $pathsToFilter = @($DetectedCygwinPath, $cygwinBinPath) # Paths to remove (case-insensitive)
 
-        # Process System PATH
+        # --- Process System PATH ---
+        Write-Verbose "Processing System PATH..."
+        $sysPathReg = "Registry::HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Session Manager\Environment"
+        $originalSystemPath = $null
+        $systemPathModified = $false
         try {
-            $sysPathReg = "Registry::HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Session Manager\Environment"
-            $systemPath = (Get-ItemProperty -Path $sysPathReg -Name Path -ErrorAction SilentlyContinue).Path
-            if ($systemPath) {
-                $originalSystemPath = $systemPath
-                $newSystemPath = ($systemPath -split ';') | Where-Object {
-                    $_ -ne '' -and `
-                    -not $_.StartsWith($cygwinBinPath, [System.StringComparison]::OrdinalIgnoreCase) -and `
-                    -not $_.StartsWith($DetectedCygwinPath, [System.StringComparison]::OrdinalIgnoreCase)
-                } | Sort-Object | Get-Unique
-                $newSystemPathString = $newSystemPath -join ';'
+            $sysProp = Get-ItemProperty -Path $sysPathReg -Name Path -ErrorAction SilentlyContinue # Don't stop if Path doesn't exist
+            if ($sysProp -and $sysProp.Path) {
+                $originalSystemPath = $sysProp.Path
+                # Split, filter, sort, unique, join
+                $pathEntries = $originalSystemPath -split ';' | Where-Object { $_ -ne '' }
+                $filteredEntries = $pathEntries | Where-Object { $entry = $_; $pathsToFilter | Where-Object { $entry.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) } | Measure-Object | Select-Object -ExpandProperty Count -eq 0 }
+                # Avoid Sort/Unique - keep original order if possible, just remove entries
+                $newSystemPathString = ($filteredEntries | Where-Object {$_ -ne ''}) -join ';' # Ensure no empty elements remain after filtering
 
-                if ($newSystemPathString.Length -ne $originalSystemPath.Length) {
+                # Only write if changed
+                if ($newSystemPathString -ne $originalSystemPath) {
                     Write-Host "  Modifying System PATH..." -ForegroundColor Yellow
-                    Set-ItemProperty -Path $sysPathReg -Name Path -Value $newSystemPathString
-                    Write-Host "  System PATH modified (requires restart/re-login)." -ForegroundColor Green
+                    Write-Verbose "    Old System PATH: $originalSystemPath"
+                    Write-Verbose "    New System PATH: $newSystemPathString"
+                    Set-ItemProperty -Path $sysPathReg -Name Path -Value $newSystemPathString -ErrorAction Stop
+                    Write-Host "    System PATH updated." -ForegroundColor Green
+                    $systemPathModified = $true
                 } else {
-                    Write-Host "  No Cygwin entries found in System PATH."
+                     Write-Verbose "    No changes needed for System PATH."
                 }
             } else {
-                Write-Host "  System PATH variable not found or accessible in registry."
+                Write-Verbose "  System PATH variable not found or empty."
             }
         } catch {
             Write-Warning "  Could not process System PATH: $($_.Exception.Message)"
         }
+        if (!$systemPathModified -and $originalSystemPath -ne $null) { Write-Host "  No changes made to System PATH." -ForegroundColor Green }
 
-        # Process User PATH
+
+        # --- Process User PATH ---
+        Write-Verbose "Processing User PATH..."
+        $usrPathReg = "Registry::HKEY_CURRENT_USER\Environment"
+        $originalUserPath = $null
+        $userPathModified = $false
         try {
-            $usrPathReg = "Registry::HKEY_CURRENT_USER\Environment"
-            # Ensure the key exists before trying to get/set properties
+            # Ensure the Environment key exists for the current user
             if (-not (Test-Path $usrPathReg)) {
+                Write-Verbose "  Creating HKCU:\Environment key as it doesn't exist."
                 New-Item -Path $usrPathReg -Force | Out-Null
             }
-            $userPath = (Get-ItemProperty -Path $usrPathReg -Name Path -ErrorAction SilentlyContinue).Path
-            if ($userPath) {
-                $originalUserPath = $userPath
-                $newUserPath = ($userPath -split ';') | Where-Object {
-                    $_ -ne '' -and `
-                    -not $_.StartsWith($cygwinBinPath, [System.StringComparison]::OrdinalIgnoreCase) -and `
-                    -not $_.StartsWith($DetectedCygwinPath, [System.StringComparison]::OrdinalIgnoreCase)
-                } | Sort-Object | Get-Unique
-                $newUserPathString = $newUserPath -join ';'
+            $usrProp = Get-ItemProperty -Path $usrPathReg -Name Path -ErrorAction SilentlyContinue # Don't stop if Path doesn't exist
+            if ($usrProp -and $usrProp.Path) {
+                 $originalUserPath = $usrProp.Path
+                 $pathEntries = $originalUserPath -split ';' | Where-Object { $_ -ne '' }
+                 $filteredEntries = $pathEntries | Where-Object { $entry = $_; $pathsToFilter | Where-Object { $entry.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) } | Measure-Object | Select-Object -ExpandProperty Count -eq 0 }
+                 $newUserPathString = ($filteredEntries | Where-Object {$_ -ne ''}) -join ';'
 
-                if ($newUserPathString.Length -ne $originalUserPath.Length) {
+                 if ($newUserPathString -ne $originalUserPath) {
                     Write-Host "  Modifying User PATH..." -ForegroundColor Yellow
-                    Set-ItemProperty -Path $usrPathReg -Name Path -Value $newUserPathString
-                    Write-Host "  User PATH modified (requires restart/re-login)." -ForegroundColor Green
+                    Write-Verbose "    Old User PATH: $originalUserPath"
+                    Write-Verbose "    New User PATH: $newUserPathString"
+                    Set-ItemProperty -Path $usrPathReg -Name Path -Value $newUserPathString -ErrorAction Stop
+                    Write-Host "    User PATH updated." -ForegroundColor Green
+                    $userPathModified = $true
                 } else {
-                    Write-Host "  No Cygwin entries found in User PATH."
+                     Write-Verbose "    No changes needed for User PATH."
                 }
             } else {
-                Write-Host "  User PATH variable not found or empty."
+                 Write-Verbose "  User PATH variable not found or empty."
             }
         } catch {
             Write-Warning "  Could not process User PATH: $($_.Exception.Message)"
         }
+         if (!$userPathModified -and $originalUserPath -ne $null) { Write-Host "  No changes made to User PATH." -ForegroundColor Green }
+
+         if ($systemPathModified -or $userPathModified) {
+             Write-Warning "  PATH changes require restarting applications or the system to take effect."
+         } else {
+              Write-Host "  No Cygwin-related entries found or removed from PATH variables." -ForegroundColor Green
+         }
+
     } else {
-        Write-Host "Skipping PATH modification." -ForegroundColor Green
+        Write-Host "Skipping PATH modification as requested or not enabled." -ForegroundColor Green
     }
 } else {
-    Write-Warning "Skipping PATH modification because Cygwin installation path was not found."
+    Write-Warning "Skipping PATH modification: Cygwin installation path not found."
 }
+Write-Host "-----------------------------------------------------"
 
-# 7. Find and Remove Cygwin Download Cache Folders
-Write-Host "`nStep 5: Processing Cygwin download cache folders..." -ForegroundColor Cyan
+
+# 8. Find and Remove Cygwin Download Cache Folders
+Write-Host "`nStep 6: Processing Cygwin download cache folders..." -ForegroundColor Cyan
 $potentialCacheFolders = @()
-foreach ($location in $CacheSearchLocations) {
-    if (Test-Path $location) {
-        Write-Host "  Searching in: $location" -ForegroundColor Gray
-        try {
-            # Define exclusion logic based on whether path was found
-            $excludePathCheck = if ($PathFound) { { $_.FullName -ne $DetectedCygwinPath } } else { { $true } }
+$proceedWithCacheRemoval = $false
 
-            $folders = Get-ChildItem -Path $location -Directory -Depth 0 -ErrorAction SilentlyContinue | Where-Object {
-                ($_.Name -like 'http*' -or $_.Name -like 'ftp*' -or $_.Name -match 'cygwin') -and `
-                ((Test-Path (Join-Path $_.FullName 'x86_64') -PathType Container) -or (Test-Path (Join-Path $_.FullName 'x86') -PathType Container)) -and `
-                (& $excludePathCheck) # Dynamically apply the exclusion check
+Write-Verbose "Searching for potential cache folders in common locations..."
+foreach ($location in $CacheSearchLocations) {
+    if (Test-Path $location -PathType Container) {
+        Write-Verbose "  Searching in: $location"
+        try {
+            # Define a scriptblock to check if a folder should be excluded (i.e., it's the main install dir)
+            $excludeCheck = { param($folder) $true } # Default to NOT exclude
+            if ($PathFound) {
+                $excludeCheck = { param($folder) $folder.FullName -ne $DetectedCygwinPath }
             }
+
+            # Find folders matching typical cache patterns, containing x86 or x86_64 subdirs, and not being the install dir itself
+            $folders = Get-ChildItem -Path $location -Directory -Depth 0 -ErrorAction SilentlyContinue |
+                       Where-Object {
+                           ($_.Name -like 'http*' -or $_.Name -like 'ftp*' -or $_.Name -match 'cygwin') -and # Name pattern
+                           ((Test-Path (Join-Path $_.FullName 'x86_64') -PathType Container) -or (Test-Path (Join-Path $_.FullName 'x86') -PathType Container)) -and # Contains arch subdir
+                           (& $excludeCheck $_) # Exclude if it's the main install path
+                       }
+
             if ($folders) {
                 $potentialCacheFolders += $folders
             }
         } catch {
-            Write-Warning "   Error searching in '$location': $($_.Exception.Message)"
+            Write-Warning "   Error searching '$location' for cache folders: $($_.Exception.Message)"
         }
     } else {
-        Write-Host "  Skipping non-existent location: $location" -ForegroundColor Gray
+        Write-Verbose "  Skipping search location (not found): $location"
     }
 }
 
+# Get unique full paths
 $uniqueCachePaths = $potentialCacheFolders | Select-Object -ExpandProperty FullName -Unique
 
 if ($uniqueCachePaths.Count -gt 0) {
     Write-Host "Found potential Cygwin download cache folders:" -ForegroundColor Yellow
     $uniqueCachePaths | ForEach-Object { Write-Host "  - $_" }
 
-    $proceedWithCacheRemoval = $false
-    if ($Silent) {
+    if ($Silent.IsPresent) {
         if ($EffectiveRemoveCacheFolders) {
-            Write-Host "Silent mode: Proceeding with cache folder removal." -ForegroundColor Cyan
+            Write-Host "Silent mode: Will attempt to remove cache folders." -ForegroundColor Cyan
             $proceedWithCacheRemoval = $true
         } else {
-            Write-Host "Silent mode: Skipping cache folder removal (action not enabled)." -ForegroundColor Gray
+            Write-Host "Silent mode: Skipping cache folder removal (Action not enabled)." -ForegroundColor Gray
         }
     } else { # Interactive
         Write-Host ""
-        $confirm = Read-Host "Do you want to DELETE these potential cache folders? (y/n)"
+        $confirm = Read-Host "Do you want to DELETE these cache folders? (y/n)"
         if ($confirm -eq 'y') {
             $proceedWithCacheRemoval = $true
         }
@@ -473,151 +695,202 @@ if ($uniqueCachePaths.Count -gt 0) {
     if ($proceedWithCacheRemoval) {
         Write-Host "Proceeding with cache folder removal..." -ForegroundColor Yellow
         foreach ($cachePath in $uniqueCachePaths) {
-            Write-Host "  Deleting folder: $cachePath..." -ForegroundColor Yellow
+            Write-Host "  Deleting: $cachePath..." -ForegroundColor Yellow
             try {
                 Remove-Item -Path $cachePath -Recurse -Force -ErrorAction Stop
-                Write-Host "    Folder '$cachePath' deleted successfully." -ForegroundColor Green
+                Write-Host "    Deleted '$cachePath'." -ForegroundColor Green
             } catch {
-                Write-Warning "    FAILED to delete folder '$cachePath': $($_.Exception.Message)"
+                Write-Warning "    FAILED to delete cache folder '$cachePath': $($_.Exception.Message)"
             }
         }
     } else {
-        Write-Host "Skipping potential cache folder removal." -ForegroundColor Green
+        Write-Host "Skipping cache folder removal as requested or not enabled." -ForegroundColor Green
     }
 } else {
-    Write-Host "No likely Cygwin download cache folders found in specified search locations." -ForegroundColor Green
+    Write-Host "No likely Cygwin download cache folders found in searched locations." -ForegroundColor Green
 }
+Write-Host "-----------------------------------------------------"
 
-# 8. Find and Remove Start Menu & Desktop Shortcuts
-Write-Host "`nStep 6: Processing Start Menu & Desktop shortcuts..." -ForegroundColor Cyan
-$foundShortcutFolders = @() # Start Menu Folders
-$foundDesktopShortcuts = @() # Desktop .lnk Files
 
-# Find Start Menu Folders
+# 9. Find and Remove Start Menu & Desktop Shortcuts
+Write-Host "`nStep 7: Processing Start Menu & Desktop shortcuts..." -ForegroundColor Cyan
+$foundShortcutItems = @{ StartMenuFolders = @(); DesktopShortcuts = @() }
+$proceedWithShortcutRemoval = $false
+
+# Search Start Menu Folders
+Write-Verbose "Searching for '$CygwinShortcutFolderName' folder in common Start Menu locations..."
 foreach ($startMenuPath in $StartMenuPaths) {
     if (Test-Path $startMenuPath -PathType Container) {
-         $cygwinFolderInStartMenu = Join-Path $startMenuPath $CygwinShortcutFolderName
+        $cygwinFolderInStartMenu = Join-Path $startMenuPath $CygwinShortcutFolderName
         if (Test-Path $cygwinFolderInStartMenu -PathType Container) {
-            Write-Host "Found potential Cygwin Start Menu folder: $cygwinFolderInStartMenu" -ForegroundColor Yellow
-            $foundShortcutFolders += $cygwinFolderInStartMenu
+            Write-Verbose "Found Start Menu folder: $cygwinFolderInStartMenu"
+            $foundShortcutItems.StartMenuFolders += $cygwinFolderInStartMenu
         }
     }
 }
 
-# Find Desktop Shortcuts
+# Search Desktop Shortcuts
+Write-Verbose "Searching for Cygwin shortcuts (*cygwin*.lnk) on common Desktops..."
 foreach ($desktopPath in $DesktopPaths) {
     if (Test-Path $desktopPath -PathType Container) {
         try {
-            $shortcuts = Get-ChildItem -Path $desktopPath -Filter "*.lnk" -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'cygwin' }
+            $shortcuts = Get-ChildItem -Path $desktopPath -Filter "*cygwin*.lnk" -File -ErrorAction SilentlyContinue |
+                         Where-Object { $_.Name -match 'cygwin' } # Double check name just in case filter is broad
             if ($shortcuts) {
                 $shortcuts | ForEach-Object {
-                     Write-Host "Found potential Cygwin Desktop shortcut: $($_.FullName)" -ForegroundColor Yellow
-                     $foundDesktopShortcuts += $_.FullName
-                }
+                    Write-Verbose "Found Desktop shortcut: $($_.FullName)"
+                    $foundShortcutItems.DesktopShortcuts += $_.FullName
+                 }
             }
         } catch {
-             Write-Warning "Error searching for shortcuts in '$desktopPath': $($_.Exception.Message)"
+            Write-Warning "Error searching for shortcuts in '$desktopPath': $($_.Exception.Message)"
         }
     }
 }
 
+# Consolidate findings and decide action
+$totalShortcutsFound = $foundShortcutItems.StartMenuFolders.Count + $foundShortcutItems.DesktopShortcuts.Count
+if ($totalShortcutsFound -gt 0) {
+    Write-Host "Found potential Cygwin shortcuts/folders:" -ForegroundColor Yellow
+    $foundShortcutItems.StartMenuFolders | ForEach-Object { Write-Host "  - Start Menu Folder: $_" }
+    $foundShortcutItems.DesktopShortcuts | ForEach-Object { Write-Host "  - Desktop Shortcut: $_" }
 
-if ($foundShortcutFolders.Count -gt 0 -or $foundDesktopShortcuts.Count -gt 0) {
-    $proceedWithShortcutRemoval = $false
-    if ($Silent) {
+    if ($Silent.IsPresent) {
         if ($EffectiveRemoveShortcuts) {
-            Write-Host "Silent mode: Proceeding with Start Menu/Desktop shortcut removal." -ForegroundColor Cyan
+            Write-Host "Silent mode: Will attempt to remove shortcuts/folders." -ForegroundColor Cyan
             $proceedWithShortcutRemoval = $true
         } else {
-            Write-Host "Silent mode: Skipping Start Menu/Desktop shortcut removal (action not enabled)." -ForegroundColor Gray
+            Write-Host "Silent mode: Skipping shortcut removal (Action not enabled)." -ForegroundColor Gray
         }
     } else { # Interactive
         Write-Host ""
-        $confirm = Read-Host "Do you want to DELETE these Start Menu folders and Desktop shortcuts? (y/n)"
+        $confirm = Read-Host "Do you want to DELETE these shortcuts and folders? (y/n)"
         if ($confirm -eq 'y') {
             $proceedWithShortcutRemoval = $true
         }
     }
 
     if ($proceedWithShortcutRemoval) {
+        Write-Host "Proceeding with shortcut/folder removal..." -ForegroundColor Yellow
         # Remove Start Menu Folders
-        if ($foundShortcutFolders.Count -gt 0) {
-            Write-Host "Proceeding with Start Menu folder removal..." -ForegroundColor Yellow
-            foreach ($shortcutFolderPath in $foundShortcutFolders) {
-                Write-Host "  Deleting folder: $shortcutFolderPath..." -ForegroundColor Yellow
+        if ($foundShortcutItems.StartMenuFolders.Count -gt 0) {
+            Write-Host "  Removing Start Menu folders..." -ForegroundColor Yellow
+            foreach ($shortcutFolderPath in $foundShortcutItems.StartMenuFolders) {
+                Write-Host "    Deleting Folder: $shortcutFolderPath..."
                 try {
                     Remove-Item -Path $shortcutFolderPath -Recurse -Force -ErrorAction Stop
-                    Write-Host "    Folder '$shortcutFolderPath' deleted successfully." -ForegroundColor Green
+                    Write-Host "      Deleted." -ForegroundColor Green
                 } catch {
-                    Write-Warning "    FAILED to delete folder '$shortcutFolderPath': $($_.Exception.Message)"
+                    Write-Warning "      FAILED to delete Start Menu folder '$shortcutFolderPath': $($_.Exception.Message)"
                 }
             }
         }
-         # Remove Desktop Shortcuts
-        if ($foundDesktopShortcuts.Count -gt 0) {
-            Write-Host "Proceeding with Desktop shortcut removal..." -ForegroundColor Yellow
-            foreach ($shortcutPath in $foundDesktopShortcuts) {
-                Write-Host "  Deleting file: $shortcutPath..." -ForegroundColor Yellow
-                try {
+        # Remove Desktop Shortcuts
+        if ($foundShortcutItems.DesktopShortcuts.Count -gt 0) {
+            Write-Host "  Removing Desktop shortcuts..." -ForegroundColor Yellow
+            foreach ($shortcutPath in $foundShortcutItems.DesktopShortcuts) {
+                 Write-Host "    Deleting Shortcut: $shortcutPath..."
+                 try {
                     Remove-Item -Path $shortcutPath -Force -ErrorAction Stop
-                    Write-Host "    File '$shortcutPath' deleted successfully." -ForegroundColor Green
-                } catch {
-                    Write-Warning "    FAILED to delete file '$shortcutPath': $($_.Exception.Message)"
-                }
+                    Write-Host "      Deleted." -ForegroundColor Green
+                 } catch {
+                    Write-Warning "      FAILED to delete Desktop shortcut '$shortcutPath': $($_.Exception.Message)"
+                 }
             }
         }
     } else {
-        Write-Host "Skipping Start Menu/Desktop shortcut removal." -ForegroundColor Green
+        Write-Host "Skipping shortcut removal as requested or not enabled." -ForegroundColor Green
     }
 } else {
-    Write-Host "No '$CygwinShortcutFolderName' folder found in standard Start Menu locations and no Cygwin shortcuts found on Desktops." -ForegroundColor Green
+    Write-Host "No standard Cygwin Start Menu folders or Desktop shortcuts found." -ForegroundColor Green
+}
+Write-Host "-----------------------------------------------------"
+
+
+# 10. Delete Cygwin Installation Directory (REQUIRES PATH and depends on LSA Reset if applicable)
+Write-Host "`nStep 8: Processing main Cygwin installation directory..." -ForegroundColor Cyan
+$proceedWithInstallDirRemoval = $false
+$canAttemptInstallDirRemoval = $true # Assume possible unless blocked
+
+if (-not $PathFound) {
+    Write-Warning "Skipping main directory deletion: Cygwin installation path was not found."
+    $canAttemptInstallDirRemoval = $false
+} else {
+    # --- LSA Dependency Check ---
+    # If cyglsa WAS found in registry, BUT we did NOT successfully attempt/complete the reset (either user said 'n', or silent mode didn't enable it)
+    if ($cygLsaFoundInRegistry -and -not $lsaModified) { # Check if modification was successful, not just attempted
+        Write-Error "CRITICAL: Blocking main directory deletion because '$CygLsaPackageName' was found in LSA packages, but was NOT successfully removed."
+        Write-Error "Deleting the Cygwin directory ('$DetectedCygwinPath') without removing '$CygLsaPackageName' from LSA first can cause system login failures or instability after reboot."
+        Write-Warning "To remove the directory, re-run this script ensuring LSA reset is allowed and successful, then reboot."
+        $canAttemptInstallDirRemoval = $false
+    }
 }
 
-# 9. Delete Cygwin Installation Directory (REQUIRES PATH)
-Write-Host "`nStep 7: Processing main Cygwin installation directory..." -ForegroundColor Cyan
-$proceedWithInstallDirRemoval = $false
-
-if ($PathFound) {
-    if ($Silent) {
+# Proceed only if path was found AND LSA dependency is met
+if ($PathFound -and $canAttemptInstallDirRemoval) {
+    if ($Silent.IsPresent) {
         if ($EffectiveRemoveInstallDir) {
-            Write-Host "Silent mode: Proceeding with main installation directory removal." -ForegroundColor Cyan
+            Write-Host "Silent mode: Will attempt removal of main installation directory: $DetectedCygwinPath" -ForegroundColor Cyan
             $proceedWithInstallDirRemoval = $true
         } else {
-            Write-Host "Silent mode: Skipping main installation directory removal (action not enabled)." -ForegroundColor Gray
+            Write-Host "Silent mode: Skipping main installation directory removal (Action not enabled)." -ForegroundColor Gray
         }
     } else { # Interactive
-        Write-Warning "This final destructive step will permanently delete the main installation folder: $DetectedCygwinPath"
+        Write-Warning "FINAL STEP: This will permanently delete the main Cygwin installation directory and all its contents:"
+        Write-Warning "$DetectedCygwinPath"
         Write-Host ""
-        $confirm = Read-Host "Are you absolutely sure you want to DELETE '$DetectedCygwinPath'? (y/n)"
+        $confirm = Read-Host "Are you ABSOLUTELY SURE you want to DELETE this directory? (y/n)"
         if ($confirm -eq 'y') {
             $proceedWithInstallDirRemoval = $true
         }
     }
 
     if ($proceedWithInstallDirRemoval) {
-        Write-Host "  Deleting directory '$DetectedCygwinPath'..." -ForegroundColor Red
+        Write-Host "  Attempting to delete directory '$DetectedCygwinPath'..." -ForegroundColor Red
         try {
+            # Use standard Remove-Item
             Remove-Item -Path $DetectedCygwinPath -Recurse -Force -ErrorAction Stop
             Write-Host "  Directory '$DetectedCygwinPath' deleted successfully." -ForegroundColor Green
         } catch {
             Write-Error "  FAILED to delete directory '$DetectedCygwinPath': $($_.Exception.Message)"
-            Write-Warning "  A RESTART may be required before manual deletion."
+            Write-Warning "  This often happens if files are locked by running processes (even after service stop)."
+            Write-Warning "  A RESTART may be required before you can manually delete the remaining directory."
         }
     } else {
-        Write-Host "Main directory deletion skipped." -ForegroundColor Green
+        Write-Host "Skipping main directory deletion as requested or not enabled." -ForegroundColor Green
     }
+} elseif ($PathFound -and -not $canAttemptInstallDirRemoval) {
+     # Message about LSA block already shown above
+     Write-Host "Main directory deletion skipped due to unmet LSA dependency." -ForegroundColor Yellow
+}
+# Case where path not found already handled at the start of this step
+
+# --- Final Recommendations ---
+Write-Host "`n-----------------------------------------------------"
+Write-Host "Cygwin removal process attempted." -ForegroundColor Green
+Write-Host "-----------------------------------------------------"
+
+if ($lsaModified) {
+    Write-Host ""
+    Write-Host " LSA AUTHENTICATION PACKAGES WERE MODIFIED! " -BackgroundColor Red -ForegroundColor White
+    Write-Warning "A system REBOOT IS **MANDATORY** for these changes to take effect correctly and ensure system stability."
+    Write-Warning "Failure to reboot after LSA changes can lead to login problems or other authentication issues."
+    Write-Host ""
 } else {
-    Write-Warning "Skipping main directory deletion because Cygwin installation path was not found."
+    # Check if any potentially impactful action was taken (even if LSA wasn't touched)
+    if ($proceedWithServiceRemoval -or $proceedWithPathModification -or $proceedWithInstallDirRemoval -or $proceedWithRegistryRemoval) {
+         Write-Warning "RESTART RECOMMENDED to ensure all changes (service removal, PATH updates, file locks released) take full effect."
+    } else {
+         Write-Host "Review the log for actions taken. A restart might still be beneficial."
+    }
 }
 
-# 10. Recommend Restart
-Write-Host "`nCygwin removal process complete." -ForegroundColor Green
-Write-Host "-----------------------------------------------------"
-Write-Warning "RESTART STRONGLY RECOMMENDED to ensure all changes take effect."
-# Note: Desktop shortcuts were handled if requested, so no specific warning needed here unless further manual checks desired.
+Write-Warning "Manually check your system for any remaining non-standard Cygwin shortcuts, user data (e.g., in home directories if they were outside the main install path), or environment variables if needed."
+
 $ScriptEndTime = Get-Date
 $Duration = New-TimeSpan -Start $ScriptStartTime -End $ScriptEndTime
-Write-Host "Script execution time: $($Duration.TotalSeconds) seconds."
+Write-Host "`nScript execution finished at: $ScriptEndTime"
+Write-Host "Total execution time: $([math]::Round($Duration.TotalSeconds, 2)) seconds."
 Write-Host "-----------------------------------------------------"
 
 Exit 0
