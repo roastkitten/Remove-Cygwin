@@ -547,7 +547,9 @@ if ($PathFound) {
     if ($proceedWithPathModification) {
         Write-Host "Proceeding with PATH modification..." -ForegroundColor Yellow
         $cygwinBinPath = Join-Path $DetectedCygwinPath "bin"
-        $pathsToFilter = @($DetectedCygwinPath, $cygwinBinPath) # Paths to remove (case-insensitive)
+        # Define the paths/prefixes to filter out
+        $pathsToFilter = @($DetectedCygwinPath, $cygwinBinPath)
+        Write-Verbose "Will filter PATH entries starting with: $($pathsToFilter -join ', ')"
 
         # --- Process System PATH ---
         Write-Verbose "Processing System PATH..."
@@ -555,14 +557,23 @@ if ($PathFound) {
         $originalSystemPath = $null
         $systemPathModified = $false
         try {
-            $sysProp = Get-ItemProperty -Path $sysPathReg -Name Path -ErrorAction SilentlyContinue # Don't stop if Path doesn't exist
+            $sysProp = Get-ItemProperty -Path $sysPathReg -Name Path -ErrorAction SilentlyContinue
             if ($sysProp -and $sysProp.Path) {
                 $originalSystemPath = $sysProp.Path
-                # Split, filter, sort, unique, join
+                # Split into entries, filter out empty ones first
                 $pathEntries = $originalSystemPath -split ';' | Where-Object { $_ -ne '' }
-                $filteredEntries = $pathEntries | Where-Object { $entry = $_; $pathsToFilter | Where-Object { $entry.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) } | Measure-Object | Select-Object -ExpandProperty Count -eq 0 }
-                # Avoid Sort/Unique - keep original order if possible, just remove entries
-                $newSystemPathString = ($filteredEntries | Where-Object {$_ -ne ''}) -join ';' # Ensure no empty elements remain after filtering
+
+                # *** CORRECTED FILTERING LOGIC ***
+                $filteredEntries = $pathEntries | Where-Object {
+                    $currentEntry = $_
+                    # Check if the current entry starts with any of the paths to filter
+                    $matchCount = ($pathsToFilter | Where-Object { $currentEntry.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) } | Measure-Object).Count
+                    # Keep the entry ($_) if the match count is 0
+                    $matchCount -eq 0
+                }
+
+                # Join the filtered entries back, preserving relative order
+                $newSystemPathString = $filteredEntries -join ';'
 
                 # Only write if changed
                 if ($newSystemPathString -ne $originalSystemPath) {
@@ -579,7 +590,7 @@ if ($PathFound) {
                 Write-Verbose "  System PATH variable not found or empty."
             }
         } catch {
-            Write-Warning "  Could not process System PATH: $($_.Exception.Message)"
+            Write-Warning "  Could not process System PATH: $($_.Exception.Message)" # Error message will now be more specific if Set-ItemProperty fails
         }
         if (!$systemPathModified -and $originalSystemPath -ne $null) { Write-Host "  No changes made to System PATH." -ForegroundColor Green }
 
@@ -590,17 +601,23 @@ if ($PathFound) {
         $originalUserPath = $null
         $userPathModified = $false
         try {
-            # Ensure the Environment key exists for the current user
             if (-not (Test-Path $usrPathReg)) {
                 Write-Verbose "  Creating HKCU:\Environment key as it doesn't exist."
                 New-Item -Path $usrPathReg -Force | Out-Null
             }
-            $usrProp = Get-ItemProperty -Path $usrPathReg -Name Path -ErrorAction SilentlyContinue # Don't stop if Path doesn't exist
+            $usrProp = Get-ItemProperty -Path $usrPathReg -Name Path -ErrorAction SilentlyContinue
             if ($usrProp -and $usrProp.Path) {
                  $originalUserPath = $usrProp.Path
                  $pathEntries = $originalUserPath -split ';' | Where-Object { $_ -ne '' }
-                 $filteredEntries = $pathEntries | Where-Object { $entry = $_; $pathsToFilter | Where-Object { $entry.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) } | Measure-Object | Select-Object -ExpandProperty Count -eq 0 }
-                 $newUserPathString = ($filteredEntries | Where-Object {$_ -ne ''}) -join ';'
+
+                 # *** CORRECTED FILTERING LOGIC ***
+                 $filteredEntries = $pathEntries | Where-Object {
+                    $currentEntry = $_
+                    $matchCount = ($pathsToFilter | Where-Object { $currentEntry.StartsWith($_, [System.StringComparison]::OrdinalIgnoreCase) } | Measure-Object).Count
+                    $matchCount -eq 0
+                 }
+
+                 $newUserPathString = $filteredEntries -join ';'
 
                  if ($newUserPathString -ne $originalUserPath) {
                     Write-Host "  Modifying User PATH..." -ForegroundColor Yellow
@@ -616,7 +633,7 @@ if ($PathFound) {
                  Write-Verbose "  User PATH variable not found or empty."
             }
         } catch {
-            Write-Warning "  Could not process User PATH: $($_.Exception.Message)"
+            Write-Warning "  Could not process User PATH: $($_.Exception.Message)" # Error message will now be more specific if Set-ItemProperty fails
         }
          if (!$userPathModified -and $originalUserPath -ne $null) { Write-Host "  No changes made to User PATH." -ForegroundColor Green }
 
@@ -633,7 +650,6 @@ if ($PathFound) {
     Write-Warning "Skipping PATH modification: Cygwin installation path not found."
 }
 Write-Host "-----------------------------------------------------"
-
 
 # 8. Find and Remove Cygwin Download Cache Folders
 Write-Host "`nStep 6: Processing Cygwin download cache folders..." -ForegroundColor Cyan
