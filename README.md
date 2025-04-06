@@ -14,7 +14,7 @@ A comprehensive PowerShell script to thoroughly uninstall Cygwin from Windows. I
 * **Process Termination:** Automatically attempts to forcefully terminate running Cygwin processes. **Save all work** in Cygwin applications before running.
 * **Backup Data:** Ensure any important data *within* your Cygwin environment (like `/home` mapped inside the install path) is **backed up securely** elsewhere before execution.
 * **Administrator Required:** Must be run with elevated (Admin) privileges. The script includes a check.
-* **LSA Modification & Mandatory Reboot:** Removing the `cyglsa` LSA package (uncommon unless manually configured) is high-risk. If performed (requires confirmation or specific silent flags), a **SYSTEM REBOOT IS MANDATORY** afterwards to prevent login issues and ensure stability.
+* **LSA Modification & Mandatory Reboot:** Removing the `cyglsa` LSA package (uncommon unless manually configured) is high-risk. If performed (requires confirmation or specific silent flags), a **SYSTEM REBOOT IS MANDATORY** afterwards to prevent login issues and ensure sytem stability.
 * **LSA/Directory Dependency:** For safety, the script **WILL NOT** delete the main Cygwin installation directory if `cyglsa` is detected in the LSA registry but the LSA reset step fails, is skipped, or is refused.
 * **Silent Mode Risks:** Using `-Silent` bypasses all confirmations. Double-check parameters. `-RemoveAllSafe` is powerful; understand its LSA implications and the mandatory reboot. Test on non-critical systems if possible.
 * **Use At Your Own Risk:** Review the script's code to fully understand its actions *before* running. You are solely responsible for its use.
