@@ -1,4 +1,4 @@
-# Remove-Cygwin: PowerShell Cygwin Removal Script
+# Remove-Cygwin: Cygwin Removal Script
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -6,7 +6,7 @@ A comprehensive PowerShell script to thoroughly uninstall Cygwin from Windows. I
 
 ---
 
-## ⚠️ WARNING & SAFETY ⚠️
+## ⚠️ WARNING ⚠️
 
 **Use this script with EXTREME CAUTION! It performs destructive and irreversible actions.**
 
