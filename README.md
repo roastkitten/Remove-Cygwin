@@ -1,155 +1,105 @@
-# Remove-Cygwin
+# Remove-Cygwin 🧹
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A comprehensive PowerShell script to thoroughly uninstall Cygwin from Windows. It handles processes, services, registry keys, environment variables, shortcuts, cache folders, the installation directory, and offers optional LSA Authentication Package (`cyglsa`) cleanup. Features interactive prompts (default) and a detailed silent mode for automation.
+**A robust PowerShell script to completely uninstall Cygwin.**
+
+Uninstalling Cygwin involves Windows Services, Registry keys, Environment Variables, and potentially active Authentication Packages (`cyglsa`) that can break your system login if removed incorrectly.
+
+**Remove-Cygwin** handles these dependencies for you, offering a safe **Interactive Mode** for humans and a strict **Silent Mode** for automation.
 
 ---
 
-## ⚠️ WARNING ⚠️
+## ⚠️ Critical Safety Warnings
 
-**Use this script with EXTREME CAUTION! It performs destructive and irreversible actions.**
+**Please read this before running the script.**
 
-* **Permanent Deletion:** Deletes Cygwin files, folders, services, registry keys, and shortcuts. **There is NO UNDO.**
-* **Process Termination:** Automatically attempts to forcefully terminate running Cygwin processes. **Save all work** in Cygwin applications before running.
-* **Backup Data:** Ensure any important data *within* your Cygwin environment (like `/home` mapped inside the install path) is **backed up securely** elsewhere before execution.
-* **Administrator Required:** Must be run with elevated (Admin) privileges. The script includes a check.
-* **LSA Modification & Mandatory Reboot:** Removing the `cyglsa` LSA package (uncommon unless manually configured) is high-risk. If performed (requires confirmation or specific silent flags), a **SYSTEM REBOOT IS MANDATORY** afterwards to prevent login issues and ensure sytem stability.
-* **LSA/Directory Dependency:** For safety, the script **WILL NOT** delete the main Cygwin installation directory if `cyglsa` is detected in the LSA registry but the LSA reset step fails, is skipped, or is refused.
-* **Silent Mode Risks:** Using `-Silent` bypasses all confirmations. Double-check parameters. `-RemoveAllSafe` is powerful; understand its LSA implications and the mandatory reboot. Test on non-critical systems if possible.
-* **Use At Your Own Risk:** Review the script's code to fully understand its actions *before* running. You are solely responsible for its use.
+1.  **🚫 No Undo:** Files, registry keys, and shortcuts are deleted permanently.
+2.  **🔐 LSA & Rebooting:** If you installed the `cyglsa` package (common with SSHD setups), this script will remove it. **You MUST reboot your computer immediately after the script finishes.** Failure to reboot can cause Windows login failures.
+    *   *Safety Feature:* The script will **refuse** to delete the main Cygwin directory if it detects `cyglsa` is active but was not successfully reset.
+3.  **💾 Back Up Data:** Any data stored *inside* your Cygwin folder (e.g., `C:\cygwin64\home\yourname`) will be destroyed. Move important files elsewhere first.
+4.  **🛑 Running Processes:** The script will forcefully close any programs running *from* the Cygwin directory to release file locks. Save your work.
+5.  **👤 Single User Cleanup:** Shortcuts and registry keys are cleaned for the **current user** and the **System** only. It does not clean the "Desktop" of other users on the machine.
 
 ---
 
-## Features
+## 🚀 Quick Start (Interactive)
 
-* Checks for Administrator privileges.
-* Auto-detects Cygwin installation path (Registry, common locations) or accepts a manual path.
-* Terminates processes running from the Cygwin directory.
-* Stops and deletes associated Windows services.
-* Removes standard Cygwin registry keys (HKLM, HKCU).
-* Cleans up `cyglsa` LSA Authentication Package (with safety checks and mandatory reboot flag).
-* Removes Cygwin directories from System and User PATH environment variables.
-* Deletes Cygwin setup download cache folders from common user locations.
-* Removes Cygwin Start Menu folder and Desktop shortcuts.
-* Deletes the main Cygwin installation directory.
-* **Interactive Mode (Default):** Prompts for confirmation before destructive actions.
-* **Silent Mode:** Allows fully automated removal using command-line switches.
+For most users, Interactive Mode is best. It auto-detects your Cygwin installation and asks for permission before every major deletion step.
 
----
-
-## Prerequisites
-
-* Windows OS (Tested on Windows 11)
-* PowerShell (v3+ recommended)
-* **Administrator Privileges**
-
----
-
-## Installation
-
-1.  Download `Remove-Cygwin.ps1`.
-2.  **Strongly Recommended:** Read this README and review the script code carefully.
-3.  **Back up critical data.**
-
----
-
-## Usage
-
-1.  **Open PowerShell as Administrator** (e.g., Right-click Start -> "Windows PowerShell (Admin)" or "Terminal (Admin)").
-2.  Navigate to the script's directory:
-    ```powershell
-    cd C:\path\to\your\scripts
-    ```
-3.  **(If needed) Adjust Execution Policy for the session:**
+1.  **Download** `Remove-Cygwin.ps1`.
+2.  **Open PowerShell as Administrator** (Right-click Start -> Terminal (Admin)).
+3.  **Allow script execution** (if you haven't before):
     ```powershell
     Set-ExecutionPolicy Bypass -Scope Process -Force
     ```
-4.  **Run the Script:**
-
-    * **Interactive Mode (Recommended First Run):**
-        ```powershell
-        # Auto-detect path, prompt for actions
-        .\Remove-Cygwin.ps1 -Verbose
-        ```
-        ```powershell
-        # Specify path manually, prompt for actions
-        .\Remove-Cygwin.ps1 -CygwinPath "C:\your\cygwin_location" -Verbose
-        ```
-
-    * **Silent Mode (Use with EXTREME CAUTION):**
-        * Requires `-Silent` AND specific `-Remove*` / `-Reset*` action switches.
-        * **NO confirmation prompts!** Actions are performed automatically.
-        * **A REBOOT MAY BE REQUIRED WITHOUT PROMPT** if LSA is modified.
-
-        ```powershell
-        # Example: Silently remove ONLY registry keys and shortcuts (Path independent)
-        .\Remove-Cygwin.ps1 -Silent -RemoveRegistryKeys -RemoveShortcuts -Verbose
-
-        # Example: Silently remove install dir (implies process/service/path removal)
-        # Requires path. Will attempt LSA reset if needed (-> MANDATORY REBOOT).
-        .\Remove-Cygwin.ps1 -Silent -RemoveInstallDir -CygwinPath "C:\cygwin64" -Verbose
-
-        # Example: Silently remove almost everything ('Safe' includes LSA Reset if needed)
-        # MANDATORY REBOOT REQUIRED if LSA was reset.
-        .\Remove-Cygwin.ps1 -Silent -RemoveAllSafe -Verbose
-
-        # Example: Silently remove components EXCEPT LSA.
-        # !!! Install Dir removal WILL FAIL if 'cyglsa' is registered !!!
-        .\Remove-Cygwin.ps1 -Silent -RemoveInstallDir -RemoveRegistryKeys -RemoveServices -ModifyPath -Verbose #-ResetLsaPackages is omitted
-        ```
-
-5.  **Follow Prompts / Monitor Output:**
-    * **Interactive:** Read prompts carefully (`y`/`n`).
-    * **Silent:** Check console output for progress, warnings (Yellow), errors (Red). Use `-Verbose` for detail.
-
-6.  **REBOOT:**
-    * **MANDATORY if LSA Authentication Packages were modified.** The script output will indicate this.
-    * **Strongly Recommended** otherwise, to ensure all changes (PATH, services, file locks) take full effect.
+4.  **Run the script:**
+    ```powershell
+    .\Remove-Cygwin.ps1 -Verbose
+    ```
+5.  **Follow the prompts.**
+6.  **Reboot your computer.**
 
 ---
 
-## Parameters
+## 🤖 Silent Mode (Automation)
 
-* `-CygwinPath <String>`
-    * Optional path to Cygwin root (e.g., `"C:\cygwin64"`). Overrides auto-detection. Needed for path-dependent actions if auto-detect fails.
-* `-Silent`
-    * Enables silent mode (no prompts). **Requires** one or more action switches below.
-* Action Switches (only effective with `-Silent`):
-    * `-RemoveInstallDir`
-        * Deletes the main Cygwin directory.
-        * *Requires:* Path found/provided & successful LSA reset if `cyglsa` was registered.
-        * *Implies:* Enables process termination, service removal, and path modification.
-    * `-RemoveRegistryKeys`
-        * Deletes `Software\Cygwin` registry keys (HKLM/HKCU).
-    * `-RemoveServices`
-        * Stops and deletes Cygwin services. *Requires:* Path.
-    * `-TerminateProcesses`
-        * Kills processes from Cygwin path. *Requires:* Path. (Usually implied by `-RemoveInstallDir` / `-RemoveAllSafe`).
-    * `-RemoveCacheFolders`
-        * Deletes detected Cygwin download caches in user profiles.
-    * `-ModifyPath`
-        * Removes Cygwin entries from PATH env variable (System/User). *Requires:* Path.
-    * `-RemoveShortcuts`
-        * Removes common Cygwin Start Menu/Desktop shortcuts.
-    * `-ResetLsaPackages`
-        * **CRITICAL!** Removes `cyglsa` from LSA registry. **MANDATORY REBOOT** follows if changed. Needed by `-RemoveInstallDir` if `cyglsa` is present.
-    * `-RemoveAllSafe`
-        * Convenience switch. Enables most removals: InstallDir, Registry, Services, Cache, Path, Shortcuts, **and LSA Reset**.
-        * Path-dependent actions only run if path is known. Process termination implied. **MANDATORY REBOOT** if LSA is reset.
+For sysadmins or automated setups. Silent mode suppresses all prompts. You must explicitly provide flags to tell the script what to do.
+
+> **Note:** Silent mode implies `-Force`. It will kill processes and delete files without asking.
+
+### Common Examples
+
+**1. The "Clean Sweep" (Recommended)**
+Removes everything. Checks for LSA, cleans Registry, Path, Services, and Files.
+```powershell
+.\Remove-Cygwin.ps1 -Silent -RemoveAllSafe
+```
+*If `cyglsa` was modified, the script output will demand a reboot.*
+
+**2. Remove Specific Components Only**
+To clean just the Registry and Shortcuts (keeping the files):
+```powershell
+.\Remove-Cygwin.ps1 -Silent -RemoveRegistryKeys -RemoveShortcuts
+```
+
+**3. Manual Path Definition**
+If auto-detection fails, or you have multiple installations:
+```powershell
+.\Remove-Cygwin.ps1 -Silent -RemoveAllSafe -CygwinPath "D:\DevTools\Cygwin"
+```
 
 ---
 
-## Limitations
+## ⚙️ Parameters
 
-* Does not remove user data stored *outside* the main Cygwin installation path (e.g., external mounts for `/home`).
-* Only removes standard `Software\Cygwin` registry keys.
-* Only removes common Start Menu/Desktop shortcuts.
-* Does not deep-clean user `%TEMP%` directories beyond specific cache checks.
-* May not remove every trace from heavily customized setups or third-party integrations.
+| Parameter | Description |
+| :--- | :--- |
+| **`-Silent`** | Enables silent operation. Requires specific action switches below. |
+| **`-CygwinPath <String>`** | Optional. Overrides auto-detection. E.g., `"C:\cygwin64"`. |
+| **`-RemoveAllSafe`** | **(Silent)** Activates all removal steps. Actions requiring a path (Services, Files) only run if a valid Cygwin path is found. |
+| **`-RemoveInstallDir`** | **(Silent)** Deletes the main folder. *Implies* `-TerminateProcesses`, `-RemoveServices`, and `-ModifyPath`. |
+| **`-RemoveRegistryKeys`** | **(Silent)** Deletes `HKLM\Software\Cygwin` and `HKCU\Software\Cygwin`. |
+| **`-RemoveServices`** | **(Silent)** Stops and deletes Cygwin-related Windows Services (e.g., `sshd`, `cron`). |
+| **`-ModifyPath`** | **(Silent)** Removes Cygwin directories from System and User `PATH` variables. |
+| **`-ResetLsaPackages`** | **(Silent)** Removes `cyglsa` from the LSA Registry. **Reboot Mandatory.** |
+| **`-RemoveShortcuts`** | **(Silent)** Deletes Cygwin shortcuts from Start Menu and Desktop. |
+| **`-RemoveCacheFolders`** | **(Silent)** Deletes Cygwin package download cache folders (e.g., in Downloads). |
 
 ---
 
-## License
+## 🔍 How It Works (Under the Hood)
+
+1.  **Detection:** Looks for Cygwin in Registry keys and common paths (`C:\cygwin64`, `C:\cygwin`).
+2.  **Services:** Queries Windows services (`Win32_Service`) looking for binaries located inside the Cygwin path. Stops them, then runs `sc delete`.
+3.  **Processes:** Scans for running processes. To ensure safety, it only kills processes whose `.Path` property starts with the Cygwin directory.
+4.  **LSA Protection:** Checks `HKLM\SYSTEM\CurrentControlSet\Control\Lsa`.
+    *   If `cyglsa` is found, it removes it while preserving standard Windows packages (`msv1_0`).
+    *   **Safety Lock:** If LSA cleanup fails or is refused by the user, the script **blocks** the deletion of the `bin` folder to prevent system instability.
+5.  **Path Variable:** Parses `HKLM` and `HKCU` environment variables and strictly filters out paths belonging to Cygwin.
+
+---
+
+## 📝 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
